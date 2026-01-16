@@ -1,6 +1,6 @@
 import streamlit as st
-import numpy as np
 import pandas as pd
+import numpy as np
 import os
 import joblib
 from sklearn.linear_model import LinearRegression
@@ -8,32 +8,38 @@ from sklearn.linear_model import LinearRegression
 # ---------------------
 # Function to load or train model
 # ---------------------
-def load_or_train_model():
+def load_or_train_model(df=None):
     model_path = "health_risk_model.pkl"
     
-    if os.path.exists(model_path):
+    if os.path.exists(model_path) and df is None:
         model = joblib.load(model_path)
         st.success("✅ Model loaded successfully!")
     else:
-        st.warning("⚠️ Model not found. Training a new dummy model...")
-        
-        # Dummy dataset (replace with your real dataset)
-        # Example: 4 features
-        X_train = np.array([
-            [25, 22.5, 120, 200],
-            [30, 28.0, 130, 210],
-            [45, 30.0, 140, 220],
-            [50, 27.5, 150, 230]
-        ])
-        y_train = np.array([0, 1, 1, 0])  # Example target: 0=low risk, 1=high risk
-        
+        st.warning("⚠️ Training a new model...")
+
+        if df is None:
+            # Dummy data if no CSV uploaded
+            X_train = np.array([
+                [25, 22.5, 120, 200],
+                [30, 28.0, 130, 210],
+                [45, 30.0, 140, 220],
+                [50, 27.5, 150, 230]
+            ])
+            y_train = np.array([0, 1, 1, 0])
+        else:
+            if 'target' not in df.columns:
+                st.error("❌ Your CSV must have a column named 'target'")
+                st.stop()
+            X_train = df.drop('target', axis=1).values
+            y_train = df['target'].values
+
         model = LinearRegression()
         model.fit(X_train, y_train)
         
-        # Save the model
+        # Save model
         joblib.dump(model, model_path)
-        st.success("✅ Dummy model trained and saved as health_risk_model.pkl!")
-    
+        st.success("✅ Model trained and saved!")
+
     return model
 
 # ---------------------
@@ -42,19 +48,38 @@ def load_or_train_model():
 st.set_page_config(page_title="Patient Health Risk Predictor", layout="centered")
 st.title("🩺 Patient Health Risk Predictor")
 
+st.write("Upload your CSV dataset below (drag & drop or browse):")
+
+# ---------------------
+# Drag & drop file uploader
+# ---------------------
+uploaded_file = st.file_uploader(
+    label="Drag and drop a CSV file here or click to browse",
+    type=["csv"]
+)
+
+df = None
+if uploaded_file is not None:
+    df = pd.read_csv(uploaded_file)
+    st.success("✅ File uploaded successfully!")
+    st.write("Preview of uploaded dataset:")
+    st.dataframe(df.head())
+else:
+    st.info("Please upload a CSV file to get started.")
+
 # Load or train the model
-model = load_or_train_model()
-
-# Display expected features
-st.write(f"Model expects {model.n_features_in_} features.")
+model = load_or_train_model(df)
 
 # ---------------------
-# Create dynamic input fields based on model features
+# Create dynamic input fields for prediction
 # ---------------------
-# If you know your feature names, you can replace these with actual names
-feature_names = [f"Feature {i+1}" for i in range(model.n_features_in_)]  
+if df is not None:
+    feature_names = [f for f in df.columns if f != 'target']
+else:
+    feature_names = [f"Feature {i+1}" for i in range(model.n_features_in_)]
 
 inputs = []
+st.write("Enter values for prediction:")
 for feature in feature_names:
     value = st.number_input(f"{feature}", value=0.0)
     inputs.append(value)
@@ -63,7 +88,7 @@ for feature in feature_names:
 # Predict button
 # ---------------------
 if st.button("Predict Health Risk"):
-    X_input = np.array([inputs])  # Ensure shape is (1, n_features)
+    X_input = np.array([inputs])
     try:
         prediction = model.predict(X_input)[0]
         st.success(f"Predicted Health Risk: {prediction:.2f}")
