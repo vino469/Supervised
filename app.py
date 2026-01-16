@@ -8,17 +8,17 @@ from sklearn.linear_model import LinearRegression
 # ---------------------
 # Function to load or train model
 # ---------------------
-def load_or_train_model(df=None):
+def load_or_train_model(X_train=None, y_train=None):
     model_path = "health_risk_model.pkl"
     
-    if os.path.exists(model_path) and df is None:
+    if os.path.exists(model_path):
         model = joblib.load(model_path)
         st.success("✅ Model loaded successfully!")
     else:
         st.warning("⚠️ Training a new model...")
-
-        if df is None:
-            # Dummy numeric data if no CSV uploaded
+        
+        # If no data provided, use dummy dataset
+        if X_train is None or y_train is None:
             X_train = np.array([
                 [25, 22.5, 120, 200],
                 [30, 28.0, 130, 210],
@@ -26,20 +26,9 @@ def load_or_train_model(df=None):
                 [50, 27.5, 150, 230]
             ])
             y_train = np.array([0, 1, 1, 0])
-        else:
-            if 'target' not in df.columns:
-                st.error("❌ Your CSV must have a column named 'target'")
-                st.stop()
-            # Only numeric features
-            numeric_cols = df.select_dtypes(include=np.number).columns.tolist()
-            numeric_cols.remove('target')
-            X_train = df[numeric_cols].values
-            y_train = df['target'].values
-
+        
         model = LinearRegression()
         model.fit(X_train, y_train)
-        
-        # Save model
         joblib.dump(model, model_path)
         st.success("✅ Model trained and saved!")
 
@@ -61,42 +50,57 @@ uploaded_file = st.file_uploader(
     type=["csv"]
 )
 
-df = None
 numeric_cols = []
+df = None
 
 if uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
     st.success("✅ File uploaded successfully!")
     st.write("Preview of uploaded dataset:")
     st.dataframe(df.head())
-    # Detect numeric columns
+
+    # Select only numeric columns for prediction
     numeric_cols = df.select_dtypes(include=np.number).columns.tolist()
-    if 'target' in numeric_cols:
-        numeric_cols.remove('target')
+    
+    if len(numeric_cols) == 0:
+        st.warning("❌ No numeric columns detected for prediction. Using dummy data.")
+        numeric_cols = ["Feature 1", "Feature 2", "Feature 3", "Feature 4"]
 else:
     st.info("Please upload a CSV file to get started.")
+    # Dummy features
+    numeric_cols = ["Feature 1", "Feature 2", "Feature 3", "Feature 4"]
 
-# Load or train the model
-model = load_or_train_model(df)
+# ---------------------
+# Prepare training data (if CSV has at least one numeric column)
+# ---------------------
+if df is not None and len(numeric_cols) > 0:
+    X_train = df[numeric_cols].values
+    # Create dummy target if CSV has no 'target' column
+    y_train = np.zeros(X_train.shape[0])
+else:
+    X_train = None
+    y_train = None
+
+# Load or train model
+model = load_or_train_model(X_train, y_train)
 
 # ---------------------
 # Dynamic numeric input fields
 # ---------------------
-if df is not None and numeric_cols:
-    st.write("Enter values for prediction:")
-    inputs = []
-    for feature in numeric_cols:
-        value = st.number_input(f"{feature}", value=0.0)
-        inputs.append(value)
-    
-    # Predict button
-    if st.button("Predict Health Risk"):
-        X_input = np.array([inputs])
-        try:
-            prediction = model.predict(X_input)[0]
-            st.success(f"Predicted Health Risk: {prediction:.2f}")
-        except ValueError as e:
-            st.error(f"Error: {e}")
-            st.info("Check that the number of input features matches the model.")
-elif df is not None and not numeric_cols:
-    st.warning("No numeric columns detected for prediction.")
+st.write("Enter values for prediction:")
+inputs = []
+for feature in numeric_cols:
+    value = st.number_input(f"{feature}", value=0.0)
+    inputs.append(value)
+
+# ---------------------
+# Predict button
+# ---------------------
+if st.button("Predict Health Risk"):
+    X_input = np.array([inputs])
+    try:
+        prediction = model.predict(X_input)[0]
+        st.success(f"Predicted Health Risk: {prediction:.2f}")
+    except ValueError as e:
+        st.error(f"Error: {e}")
+        st.info("Check that the number of input features matches the model.")
