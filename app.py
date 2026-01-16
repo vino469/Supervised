@@ -10,38 +10,43 @@ st.write("Upload your CSV dataset below (drag & drop or browse):")
 
 uploaded_file = st.file_uploader("Drag and drop a CSV file here or click to browse", type=["csv"])
 
-# Default dummy features
 dummy_features = ["Feature 1", "Feature 2", "Feature 3", "Feature 4"]
 trained_cols = dummy_features.copy()
 model = LinearRegression()
+use_dummy = True  # fallback
 
-# ---------------------
-# Load CSV & train model if possible
-# ---------------------
 if uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
     st.success("✅ File uploaded successfully!")
     st.dataframe(df.head())
 
     numeric_cols = df.select_dtypes(include=np.number).columns.tolist()
-    if len(numeric_cols) == 0:
-        st.warning("❌ No numeric columns detected. Using dummy features.")
-        numeric_cols = dummy_features
-    else:
-        trained_cols = numeric_cols.copy()
+
+    if len(numeric_cols) >= 2:
+        # If 'target' exists, use it; otherwise use last numeric column
         if "target" in df.columns:
-            X_train = df[numeric_cols].values
-            y_train = df["target"].values
-            model.fit(X_train, y_train)
-            joblib.dump(model, "health_risk_model.pkl")
-            st.success("✅ Model trained successfully!")
+            target_col = "target"
         else:
-            st.warning("❌ No 'target' column. Using dummy model instead.")
+            target_col = numeric_cols[-1]  # last numeric column as target
+            st.info(f"ℹ️ No 'target' column found. Using '{target_col}' as target.")
+
+        feature_cols = [c for c in numeric_cols if c != target_col]
+
+        X_train = df[feature_cols].values
+        y_train = df[target_col].values
+
+        model.fit(X_train, y_train)
+        trained_cols = feature_cols.copy()  # inputs match features
+        joblib.dump(model, "health_risk_model.pkl")
+        st.success("✅ Model trained successfully from CSV!")
+        use_dummy = False
+    else:
+        st.warning(" Not enough numeric columns. Using dummy model instead.")
 
 # ---------------------
-# Dummy model
+# Dummy model fallback
 # ---------------------
-if not uploaded_file or "target" not in df.columns:
+if use_dummy:
     X_dummy = np.array([
         [25, 22.5, 120, 200],
         [30, 28.0, 130, 210],
@@ -50,12 +55,12 @@ if not uploaded_file or "target" not in df.columns:
     ])
     y_dummy = np.array([0, 1, 1, 0])
     model.fit(X_dummy, y_dummy)
+    trained_cols = dummy_features.copy()
     joblib.dump(model, "health_risk_model.pkl")
     st.info("ℹ️ Using dummy model with 4 features.")
-    trained_cols = dummy_features.copy()  # ensure input fields match model
 
 # ---------------------
-# Dynamic numeric input fields
+# Input fields
 # ---------------------
 st.write("Enter values for prediction:")
 inputs = []
@@ -68,9 +73,5 @@ for feature in trained_cols:
 # ---------------------
 if st.button("Predict Health Risk"):
     X_input = np.array([inputs])
-    try:
-        prediction = model.predict(X_input)[0]
-        st.success(f"Predicted Health Risk: {prediction:.2f}")
-    except ValueError as e:
-        st.error(f"Error: {e}")
-        st.info("Check that the number of input features matches the model.")
+    prediction = model.predict(X_input)[0]
+    st.success(f"Predicted Health Risk: {prediction:.2f}")
